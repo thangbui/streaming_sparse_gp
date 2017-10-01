@@ -1,12 +1,26 @@
-*** Implementation of Streaming sparse Gaussian process approximations
+## Streaming sparse Gaussian process approximations
 
-This code was tested using GPflow 0.4.0 and tensorflow 1.2 on a Linux machine and a Mac. Note that latest GPflow might not be backward-compatible.
+This repository contains an implementation of the online sparse GP approximations for regression and classification (Bui, Nguyen and Turner, NIPS 2017). In particular, [osvgp.py](code/osvgpc.py) implements the uncollapsed variational free-energy and [osgpr.py](code/osgpr.py) implements the collapsed variational free-energy and Power-EP energy for the regression case.
 
-We also provide an implementation of the batch Power-EP sparse approximation of Bui, Yan and Turner (2017).
+We also provide an implementation of the collapsed batch Power-EP sparse approximation of Bui, Yan and Turner (2017).
 
+The code was tested using GPflow 0.4.0 and tensorflow 1.2 on a Linux machine and a Mac. Note that latest GPflow breaks backward-compatibility.
 
-References: 
+## Usage
 
+We provide several test scripts ([regression](code/test_reg_toy.py) and [classification](code/test_cla_toy.py)) to demonstrate the usage. Running these examples should the results similar to the following figures:
+
+![regression](tmp/reg_VFE_M_10_iid_False.png)
+
+![classification](tmp/cla_VFE_M_30_iid_False.png)
+
+## Contributors
+
+Thang D. Bui, Cuong V. Nguyen and Richard E. Turner
+
+## References: 
+
+```
 @inproceedings{BuiNguTur17,
   title =  {Streaming sparse {G}aussian process approximations},
   author =   {Bui, Thang D. and Nguyen, Cuong V. and Turner, Richard E.},
@@ -20,3 +34,4 @@ References:
   journal={arXiv preprint arXiv:1605.07066},
   year={2016}
 }
+```
