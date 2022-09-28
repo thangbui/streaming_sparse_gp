@@ -121,6 +121,8 @@ def plot_model(ax, m, cur_x, cur_y, seen_x=None, seen_y=None, test_x=None, test_
     mins, maxs, xx, yy, Xplot = gridParams()
     # p = m.predict_y(Xplot)[0]
     mf, vf = m.predict_f(Xplot)
+    mf = mf.numpy()
+    vf = vf.numpy()
     ax.plot(
         cur_x[:, 0][cur_y[:, 0] == 1],
         cur_x[:, 1][cur_y[:, 0] == 1],
@@ -138,14 +140,16 @@ def plot_model(ax, m, cur_x, cur_y, seen_x=None, seen_y=None, test_x=None, test_
             seen_x[:, 0][seen_y[:, 0] == 0],
             seen_x[:, 1][seen_y[:, 0] == 0],
             'o', color=col2, mew=0, alpha=0.05)
-    if hasattr(m, 'Z'):
-        ax.plot(m.Z.value[:, 0], m.Z.value[:, 1], 'ko', mew=0, ms=3, alpha=0.8)
+    if hasattr(m, 'inducing_variable'):
+        Z = m.inducing_variable.Z
+        ax.plot(Z[:, 0], Z[:, 1], 'ko', mew=0, ms=3, alpha=0.8)
     ax.contour(xx, yy, mf.reshape(*xx.shape),
                 [0], colors='k', linewidths=1.4, zorder=100)
     # plt.contour(xx, yy, p.reshape(*xx.shape), [0.5],
     #             colors='k', linewidths=1.8, zorder=100)
     if test_x is not None:
-        mf, vf = m.predict_f(test_x)
+        mf, _ = m.predict_f(test_x)
+        mf = mf.numpy()
         pred_y = 1.0 * (mf > 0)
         err = np.sum(np.abs(pred_y - test_y)) / mf.shape[0]
         ax.set_title('error=%.2f'%err)
@@ -163,28 +167,27 @@ def run_vfe(no_batches, M, use_old_Z, iid):
         yi = y[i * mb_size:(i + 1) * mb_size, :]
         if i == 0:
             Z1 = Xi[np.random.permutation(Xi.shape[0])[0:M], :]
-            model = gpflow.svgp.SVGP(Xi, yi, gpflow.kernels.RBF(2, ARD=True),
-                                     gpflow.likelihoods.Bernoulli(), Z=Z1)
-            model.optimize(disp=1, maxiter=maxiter)
+            model = gpflow.models.SVGP(gpflow.kernels.RBF(lengthscales=np.ones(2)),
+                                       gpflow.likelihoods.Bernoulli(), Z1)
+            gpflow.optimizers.Scipy().minimize(
+                model.training_loss_closure((Xi, yi)), model.trainable_variables,
+                options=dict(disp=1, maxiter=maxiter))
         else:
             Zinit = init_Z(Zopt, Xi, use_old_Z)
-            model = osvgpc.OSVGPC(Xi, yi, gpflow.kernels.RBF(2, ARD=True),
-                                gpflow.likelihoods.Bernoulli(),
-                                mu, Su, Kaa, Zopt, Zinit)
-            model.kern.variance = model.kern.variance.value
-            model.kern.lengthscales = model.kern.lengthscales.value
-            model.optimize(disp=1, maxiter=maxiter)
-        Zopt = model.Z.value
-        mu, Su = model.predict_f_full_cov(Zopt)
+            model = osvgpc.OSVGPC((Xi, yi), gpflow.kernels.RBF(lengthscales=np.ones(2)),
+                                  gpflow.likelihoods.Bernoulli(),
+                                  mu, Su, Kaa, Zopt, Zinit)
+            # TODO: what does this do: ???
+            # model.kern.variance = model.kern.variance.value
+            # model.kern.lengthscales = model.kern.lengthscales.value
+            gpflow.optimizers.Scipy().minimize(
+                model.training_loss, model.trainable_variables,
+                options=dict(disp=1, maxiter=maxiter))
+        Zopt = model.inducing_variable.Z.numpy()
+        mu, Su = model.predict_f(Zopt, full_cov=True)
         if len(Su.shape) == 3:
-            Su = Su[:, :, 0] + 1e-4 * np.eye(mu.shape[0])
-        x_free = tf.placeholder('float64')
-        model.kern.make_tf_array(x_free)
-        X_tf = tf.placeholder('float64')
-        with model.kern.tf_mode():
-            Kaa = tf.Session().run(
-                model.kern.K(X_tf),
-                feed_dict={x_free: model.kern.get_free_state(), X_tf: model.Z.value})
+            Su = Su[0, :, :] + 1e-4 * np.eye(mu.shape[0])
+        Kaa = model.kernel(model.inducing_variable.Z)
         if i == 0:
             seen_x = None
             seen_y = None
@@ -195,9 +198,11 @@ def run_vfe(no_batches, M, use_old_Z, iid):
 
     # run sparse GP
     Z = X[np.random.permutation(X.shape[0])[0:M], :]
-    model = gpflow.svgp.SVGP(X, y, gpflow.kernels.RBF(2, ARD=True),
-                           gpflow.likelihoods.Bernoulli(), Z=Z)
-    model.optimize(disp=1, maxiter=maxiter)
+    model = gpflow.models.SVGP(gpflow.kernels.RBF(lengthscales=np.ones(2)),
+                               gpflow.likelihoods.Bernoulli(), Z)
+    gpflow.optimizers.Scipy().minimize(
+        model.training_loss_closure((X, y)), model.trainable_variables,
+        options=dict(disp=1, maxiter=maxiter))
     plot_model(axs[-1], model, X, y, None, None, Xtest, ytest)
 
     for i in range(no_batches+1):
