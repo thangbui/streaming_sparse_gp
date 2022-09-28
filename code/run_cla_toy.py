@@ -4,7 +4,7 @@
 import numpy as np
 import matplotlib as mpl
 import scipy.stats
-mpl.use('pgf')
+# mpl.use('pgf')
 import pdb
 
 

@@ -34,8 +34,8 @@ class OSVGPC(GPModel, InternalDataTrainingLossMixin):
         super().__init__(kernel, likelihood, mean_function, num_latent_gps)
 
         self.q_diag, self.whiten = q_diag, whiten
-        self.Z = InducingPoints(Z)
-        num_inducing = self.Z.num_inducing
+        self.inducing_variable = InducingPoints(Z)
+        num_inducing = self.inducing_variable.num_inducing
 
         # init variational parameters
         q_mu = np.zeros((num_inducing, self.num_latent_gps))
@@ -55,18 +55,18 @@ class OSVGPC(GPModel, InternalDataTrainingLossMixin):
             )
             self.q_sqrt = Parameter(np_q_sqrt, transform=triangular())  # [P, M, M]
 
-        self.mu_old = tf.Variable(mu_old, shape=tf.TensorShape(None))
+        self.mu_old = tf.Variable(mu_old, shape=tf.TensorShape(None), trainable=False)
         self.M_old = Z_old.shape[0]
-        self.Su_old = tf.Variable(Su_old, shape=tf.TensorShape(None))
-        self.Kaa_old = tf.Variable(Kaa_old, shape=tf.TensorShape(None))
-        self.Z_old = tf.Variable(Z_old, shape=tf.TensorShape(None))
+        self.Su_old = tf.Variable(Su_old, shape=tf.TensorShape(None), trainable=False)
+        self.Kaa_old = tf.Variable(Kaa_old, shape=tf.TensorShape(None), trainable=False)
+        self.Z_old = tf.Variable(Z_old, shape=tf.TensorShape(None), trainable=False)
 
     def prior_kl(self):
-        return kullback_leiblers.prior_kl(self.Z, self.kernel, self.q_mu, self.q_sqrt, whiten=self.whiten)
+        return kullback_leiblers.prior_kl(self.inducing_variable, self.kernel, self.q_mu, self.q_sqrt, whiten=self.whiten)
 
     def correction_term(self):
         # TODO
-        Mb = self.Z.num_inducing
+        Mb = self.inducing_variable.num_inducing
         Ma = self.M_old
         # jitter = gpflow.default_jitter()
         jitter = gpflow.utilities.to_default_float(1e-4)
@@ -124,7 +124,7 @@ class OSVGPC(GPModel, InternalDataTrainingLossMixin):
         return tf.reduce_sum(var_exp) * scale - kl + online_reg
 
     def predict_f(self, Xnew, full_cov=False, full_output_cov=False):
-        mu, var = conditionals.conditional(Xnew, self.Z, self.kernel, self.q_mu,
+        mu, var = conditionals.conditional(Xnew, self.inducing_variable, self.kernel, self.q_mu,
                                            q_sqrt=self.q_sqrt, full_cov=full_cov, white=self.whiten,
                                            full_output_cov=full_output_cov)
         return mu + self.mean_function(Xnew), var
