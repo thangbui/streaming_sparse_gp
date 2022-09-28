@@ -1,4 +1,3 @@
-
 import tensorflow as tf
 import numpy as np
 import gpflow
@@ -6,10 +5,7 @@ from gpflow import Parameter, default_float
 from gpflow import conditionals, kullback_leiblers
 from gpflow.inducing_variables import InducingPoints
 from gpflow.models import GPModel, InternalDataTrainingLossMixin
-from gpflow.mean_functions import Zero
 from gpflow.utilities import positive, triangular
-
-float_type = default_float()
 
 
 class OSVGPC(GPModel, InternalDataTrainingLossMixin):
@@ -24,8 +20,7 @@ class OSVGPC(GPModel, InternalDataTrainingLossMixin):
     def __init__(self, data, kernel, likelihood, mu_old, Su_old, Kaa_old, Z_old, Z, mean_function=None,
                  q_diag=False, whiten=True):
 
-        X, Y = gpflow.models.util.data_input_to_tensor(data)
-        self.X, self.Y = self.data = X, Y
+        self.data = gpflow.models.util.data_input_to_tensor(data)
         # self.num_data = X.shape[0]
         self.num_data = None
 
@@ -98,20 +93,20 @@ class OSVGPC(GPModel, InternalDataTrainingLossMixin):
         """
         This gives a variational bound on the model likelihood.
         """
+        X, Y = self.data
 
         # Get prior KL.
         kl = self.prior_kl()
 
         # Get conditionals
-        fmean, fvar = self.predict_f(self.X, full_cov=False)
+        fmean, fvar = self.predict_f(X, full_cov=False)
 
         # Get variational expectations.
-        var_exp = self.likelihood.variational_expectations(fmean, fvar, self.Y)
+        var_exp = self.likelihood.variational_expectations(fmean, fvar, Y)
 
         # re-scale for minibatch size
         if self.num_data is not None:
             raise NotImplementedError("need to update code to ExternalDataTrainingLossMixin")
-            X = self.X
             num_data = tf.cast(self.num_data, kl.dtype)
             minibatch_size = tf.cast(tf.shape(X)[0], kl.dtype)
             scale = num_data / minibatch_size
