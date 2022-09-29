@@ -1,11 +1,11 @@
 import tensorflow as tf
 import numpy as np
 
+import gpflow
 from gpflow.inducing_variables import InducingPoints
 from gpflow.models import GPModel, InternalDataTrainingLossMixin
 from gpflow import Parameter
 from gpflow import likelihoods, covariances
-from gpflow.densities import multivariate_normal
 
 class OSGPR_VFE(GPModel, InternalDataTrainingLossMixin):
     """
@@ -44,7 +44,7 @@ class OSGPR_VFE(GPModel, InternalDataTrainingLossMixin):
         Mb = self.inducing_variable.num_inducing
         Ma = self.M_old
         # jitter = gpflow.default_jitter()
-        jitter = 1e-4
+        jitter = gpflow.utilities.to_default_float(1e-4)
         sigma2 = self.likelihood.variance
         sigma = tf.sqrt(sigma2)
 
@@ -57,7 +57,7 @@ class OSGPR_VFE(GPModel, InternalDataTrainingLossMixin):
         Kbf = covariances.Kuf(self.inducing_variable, self.kernel, self.X)
         Kbb = covariances.Kuu(self.inducing_variable, self.kernel, jitter=jitter)
         Kba = covariances.Kuf(self.inducing_variable, self.kernel, self.Z_old)
-        Kaa_cur = covariances.Kuu(self.Z_old, self.kernel, jitter=jitter)
+        Kaa_cur = gpflow.utilities.add_noise_cov(self.kernel(self.Z_old), jitter)
         Kaa = gpflow.utilities.add_noise_cov(self.Kaa_old, jitter)
 
         err = self.Y - self.mean_function(self.X)
@@ -86,7 +86,7 @@ class OSGPR_VFE(GPModel, InternalDataTrainingLossMixin):
         d3 = tf.matmul(Lainv_Kab_Lbinv, Lainv_Kab_Lbinv, transpose_a=True)
 
         D = tf.eye(Mb, dtype=gpflow.default_float()) + d1 + d2 - d3
-        D = add_noise_cov(D, jitter)
+        D = gpflow.utilities.add_noise_cov(D, jitter)
         LD = tf.linalg.cholesky(D)
 
         LDinv_Lbinv_c = tf.linalg.triangular_solve(LD, Lbinv_c, lower=True)
@@ -103,7 +103,7 @@ class OSGPR_VFE(GPModel, InternalDataTrainingLossMixin):
         Mb = self.inducing_variable.num_inducing
         Ma = self.M_old
         jitter = gpflow.default_jitter()
-        # jitter = 1e-4
+        # jitter = gpflow.utilities.to_default_float(1e-4)
         sigma2 = self.likelihood.variance
         sigma = tf.sqrt(sigma2)
         N = self.num_data
@@ -128,7 +128,7 @@ class OSGPR_VFE(GPModel, InternalDataTrainingLossMixin):
         bound += -0.5 * tf.reduce_sum(tf.square(Lainv_ma))
         bound += 0.5 * tf.reduce_sum(tf.square(LDinv_Lbinv_c))
         # log det term
-        bound += -0.5 * N * tf.reduce_sum(tf.log(sigma2))
+        bound += -0.5 * N * tf.reduce_sum(tf.math.log(sigma2))
         bound += - tf.reduce_sum(tf.math.log(tf.linalg.diag_part(LD)))
 
         # delta 1: trace term
@@ -155,7 +155,7 @@ class OSGPR_VFE(GPModel, InternalDataTrainingLossMixin):
         """
 
         # jitter = gpflow.default_jitter()
-        jitter = 1e-4
+        jitter = gpflow.utilities.to_default_float(1e-4)
 
         # a is old inducing points, b is new
         # f is training points
@@ -223,7 +223,7 @@ class OSGPR_PEP(GPModel):
         Mb = self.inducing_variable.num_inducing
         Ma = self.M_old
         # jitter = gpflow.default_jitter()
-        jitter = 1e-4
+        jitter = gpflow.utilities.to_default_float(1e-4)
         sigma2 = self.likelihood.variance
         sigma = tf.sqrt(sigma2)
         alpha = self.alpha
@@ -349,7 +349,7 @@ class OSGPR_PEP(GPModel):
         """
 
         # jitter = gpflow.default_jitter()
-        jitter = 1e-4
+        jitter = gpflow.utilities.to_default_float(1e-4)
 
         # a is old inducing points, b is new
         # f is training points
