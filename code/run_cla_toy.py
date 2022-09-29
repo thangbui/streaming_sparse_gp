@@ -3,9 +3,7 @@
 
 import numpy as np
 import matplotlib as mpl
-import scipy.stats
 # mpl.use('pgf')
-import pdb
 
 
 def figsize(scale):
@@ -65,13 +63,9 @@ for i in range(len(tableau20)):
     r, g, b = tableau20[i]
     tableau20[i] = (r / 255., g / 255., b / 255.)
 
-import scipy as scp
 import gpflow
 import osvgpc
-import pdb
 import matplotlib.pyplot as plt
-import tensorflow as tf
-import matplotlib.ticker as ticker
 
 
 def init_Z(cur_Z, new_X, use_old_Z=True, first_batch=True):
