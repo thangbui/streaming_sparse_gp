@@ -51,7 +51,7 @@ mpl.rcParams['axes.labelcolor'] = "black"
 
 import gpflow
 import osgpr
-# import sgpr
+import sgpr
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 
@@ -121,7 +121,7 @@ def plot_PEP_optimized(M, alpha, use_old_Z, shuffle):
     X, y = get_data(shuffle)
 
     N = X.shape[0]
-    gap = N/3
+    gap = N//3
     # get the first portion and call sparse GP regression
     X1 = X[:gap, :]
     y1 = y[:gap, :]
@@ -130,7 +130,7 @@ def plot_PEP_optimized(M, alpha, use_old_Z, shuffle):
     # Z1 = np.random.rand(M, 1)*L
     Z1 = X1[np.random.permutation(X1.shape[0])[0:M], :]
 
-    model1 = sgpr.SGPR_PEP(X1, y1, gpflow.kernels.RBF(variance=1.0, lengthscales=0.8), Z=Z1, alpha=alpha)
+    model1 = sgpr.SGPR_PEP((X1, y1), gpflow.kernels.RBF(variance=1.0, lengthscales=0.8), Z=Z1, alpha=alpha)
     model1.likelihood.variance.assign(0.001)
     optimize(model1, disp=1)
 
@@ -174,7 +174,7 @@ def plot_PEP_optimized(M, alpha, use_old_Z, shuffle):
 
 
     Z4 = X[np.random.permutation(X.shape[0])[0:M], :]
-    model4 = sgpr.SGPR_PEP(X, y, gpflow.kernels.RBF(variance=1.0, lengthscales=0.8), Z=Z4, alpha=alpha)
+    model4 = sgpr.SGPR_PEP((X, y), gpflow.kernels.RBF(variance=1.0, lengthscales=0.8), Z=Z4, alpha=alpha)
     model4.likelihood.variance.assign(0.001)
     optimize(model4, disp=1)
 
@@ -260,8 +260,8 @@ if __name__ == '__main__':
     seed = 10
     shuffle = False
 
-    # np.random.seed(seed)
-    # plot_PEP_optimized(10, alpha, use_old_Z, shuffle)
+    np.random.seed(seed)
+    plot_PEP_optimized(10, alpha, use_old_Z, shuffle)
     np.random.seed(seed)
     plot_VFE_optimized(10, use_old_Z, shuffle)
 

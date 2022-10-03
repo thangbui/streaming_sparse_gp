@@ -4,8 +4,7 @@ import numpy as np
 import gpflow
 from gpflow.inducing_variables import InducingPoints
 from gpflow.models import GPModel, InternalDataTrainingLossMixin
-from gpflow import Parameter
-from gpflow import likelihoods, covariances
+from gpflow import covariances
 
 class OSGPR_VFE(GPModel, InternalDataTrainingLossMixin):
     """
@@ -27,7 +26,7 @@ class OSGPR_VFE(GPModel, InternalDataTrainingLossMixin):
         This method only works with a Gaussian likelihood.
         """
         self.X, self.Y = self.data = gpflow.models.util.data_input_to_tensor(data)
-        likelihood = likelihoods.Gaussian()
+        likelihood = gpflow.likelihoods.Gaussian()
         num_latent_gps = GPModel.calc_num_latent_gps_from_data(data, kernel, likelihood)
         super().__init__(kernel, likelihood, mean_function, num_latent_gps)
 
@@ -169,7 +168,7 @@ class OSGPR_VFE(GPModel, InternalDataTrainingLossMixin):
         mean = tf.matmul(LDinv_Lbinv_Kbs, LDinv_Lbinv_c, transpose_a=True)
 
         if full_cov:
-            Kss = self.kernel(Xnew) # + jitter * tf.eye(tf.shape(Xnew)[0], dtype=float_type)  # TODO
+            Kss = self.kernel(Xnew) # + jitter * tf.eye(tf.shape(Xnew)[0], dtype=gpflow.default_float())  # TODO
             var1 = Kss
             var2 = - tf.matmul(Lbinv_Kbs, Lbinv_Kbs, transpose_a=True)
             var3 = tf.matmul(LDinv_Lbinv_Kbs, LDinv_Lbinv_Kbs, transpose_a=True)
@@ -183,7 +182,7 @@ class OSGPR_VFE(GPModel, InternalDataTrainingLossMixin):
         return mean + self.mean_function(Xnew), var
 
 
-class OSGPR_PEP(GPModel):
+class OSGPR_PEP(GPModel, InternalDataTrainingLossMixin):
     """
     Online Sparse GP regression using Power-EP.
 
@@ -205,7 +204,7 @@ class OSGPR_PEP(GPModel):
         This method only works with a Gaussian likelihood.
         """
         self.X, self.Y = self.data = gpflow.models.util.data_input_to_tensor(data)
-        likelihood = likelihoods.Gaussian()
+        likelihood = gpflow.likelihoods.Gaussian()
         num_latent_gps = GPModel.calc_num_latent_gps_from_data(data, kernel, likelihood)
         super().__init__(kernel, likelihood, mean_function, num_latent_gps)
 
@@ -322,10 +321,10 @@ class OSGPR_PEP(GPModel):
         bound += -0.5 * tf.reduce_sum(tf.square(err) / tf.reshape(Dff, [N, 1]))
         bound += -0.5 * tf.reduce_sum(tf.square(Lainv_ma))
         bound += 0.5 * tf.reduce_sum(tf.square(LDinv_c))
-        ma_Sainv_LM = tf.matmul(Sainv_ma, LM, transpose_a=True)
-        Qinv_LM_Sainv_ma = tf.matrix_solve(Q, ma_Sainv_LM, transpose_b=True)
+        ma_Sainv_LM_transposed = tf.matmul(LM, Sainv_ma, transpose_a=True)  # (Sainv_ma ᵀ @ LM)ᵀ = LM ᵀ @ Sainv_ma
+        Qinv_LM_Sainv_ma = tf.linalg.solve(Q, ma_Sainv_LM_transposed)
         bound += 0.5 * alpha * \
-            tf.reduce_sum(tf.matmul(ma_Sainv_LM, Qinv_LM_Sainv_ma))
+            tf.reduce_sum(tf.matmul(ma_Sainv_LM_transposed, Qinv_LM_Sainv_ma, transpose_a=True))
 
         # log det term
         bound += -0.5 * tf.reduce_sum(tf.math.log(Dff))
@@ -363,7 +362,7 @@ class OSGPR_PEP(GPModel):
         mean = tf.matmul(LDinv_Lbinv_Kbs, LDinv_c, transpose_a=True)
 
         if full_cov:
-            Kss = self.kernel(Xnew) # + jitter * tf.eye(tf.shape(Xnew)[0], dtype=float_type)  # TODO
+            Kss = self.kernel(Xnew) # + jitter * tf.eye(tf.shape(Xnew)[0], dtype=gpflow.default_float())  # TODO
             var1 = Kss
             var2 = - tf.matmul(Lbinv_Kbs, Lbinv_Kbs, transpose_a=True)
             var3 = tf.matmul(LDinv_Lbinv_Kbs, LDinv_Lbinv_Kbs, transpose_a=True)

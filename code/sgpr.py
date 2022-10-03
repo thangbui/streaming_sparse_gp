@@ -1,17 +1,13 @@
-from __future__ import absolute_import
 import tensorflow as tf
 import numpy as np
-from gpflow.model import GPModel
-from gpflow.param import Param, DataHolder
-from gpflow.mean_functions import Zero
-from gpflow import likelihoods
-from gpflow._settings import settings
-from gpflow.densities import multivariate_normal
-from gpflow._settings import settings
-float_type = settings.dtypes.float_type
+
+import gpflow
+from gpflow.inducing_variables import InducingPoints
+from gpflow.models import GPModel, InternalDataTrainingLossMixin
+from gpflow import covariances
 
 
-class SGPR_PEP(GPModel):
+class SGPR_PEP(GPModel, InternalDataTrainingLossMixin):
     """
     Sparse GP regression using Power-EP.
 
@@ -22,7 +18,7 @@ class SGPR_PEP(GPModel):
     
     """
 
-    def __init__(self, X, Y, kern, Z, alpha, mean_function=Zero()):
+    def __init__(self, data, kernel, Z, alpha, mean_function=None):
         """
         X is a data matrix, size N x D
         Y is a data matrix, size N x R
@@ -31,46 +27,47 @@ class SGPR_PEP(GPModel):
 
         This method only works with a Gaussian likelihood.
         """
-        X = DataHolder(X, on_shape_change='pass')
-        Y = DataHolder(Y, on_shape_change='pass')
-        likelihood = likelihoods.Gaussian()
-        GPModel.__init__(self, X, Y, kern, likelihood, mean_function)
-        self.Z = Param(Z)
-        self.num_data = X.shape[0]
-        self.num_latent = Y.shape[1]
+        self.X, self.Y = self.data = gpflow.models.util.data_input_to_tensor(data)
+        likelihood = gpflow.likelihoods.Gaussian()
+        num_latent_gps = GPModel.calc_num_latent_gps_from_data(data, kernel, likelihood)
+        super().__init__(kernel, likelihood, mean_function, num_latent_gps)
+
+        self.inducing_variable = InducingPoints(Z)
+        self.num_data = self.X.shape[0]
+
         self.alpha = alpha
 
-    def _build_common_terms(self):
-        Mb = tf.shape(self.Z)[0]
-        # jitter = settings.numerics.jitter_level
-        jitter = 1e-4
+    def _common_terms(self):
+        Mb = self.inducing_variable.num_inducing
+        # jitter = gpflow.default_jitter()
+        jitter = gpflow.utilities.to_default_float(1e-4)
         sigma2 = self.likelihood.variance
         alpha = self.alpha
 
         # b is inducing points
         # f is training points
-        Kfdiag = self.kern.Kdiag(self.X)
-        Kbf = self.kern.K(self.Z, self.X)
-        Kbb = self.kern.K(self.Z) + tf.eye(Mb, dtype=float_type) * jitter
+        Kfdiag = self.kernel(self.X, full_cov=False)
+        Kbf = covariances.Kuf(self.inducing_variable, self.kernel, self.X)
+        Kbb = covariances.Kuu(self.inducing_variable, self.kernel, jitter=jitter)
 
         err = self.Y - self.mean_function(self.X)
-        Lb = tf.cholesky(Kbb)
-        Lbinv_Kbf = tf.matrix_triangular_solve(Lb, Kbf, lower=True)
+        Lb = tf.linalg.cholesky(Kbb)
+        Lbinv_Kbf = tf.linalg.triangular_solve(Lb, Kbf, lower=True)
 
         Qff_diag = tf.reduce_sum(tf.square(Lbinv_Kbf), axis=0)
         Dff = sigma2 + alpha * (Kfdiag - Qff_diag)
         Lbinv_Kbf_LDff = Lbinv_Kbf / tf.sqrt(Dff)
-        d1 = tf.matmul(Lbinv_Kbf_LDff, tf.transpose(Lbinv_Kbf_LDff))
-        D = tf.eye(Mb, dtype=float_type) + d1
-        LD = tf.cholesky(D)
+        d1 = tf.matmul(Lbinv_Kbf_LDff, Lbinv_Kbf_LDff, transpose_b=True)
+        D = tf.eye(Mb, dtype=d1.dtype) + d1
+        LD = tf.linalg.cholesky(D)
 
         Sinv_y = self.Y / tf.reshape(Dff, [self.num_data, 1])
         c = tf.matmul(Lbinv_Kbf, Sinv_y)
-        LDinv_c = tf.matrix_triangular_solve(LD, c, lower=True)
+        LDinv_c = tf.linalg.triangular_solve(LD, c, lower=True)
 
         return (Kbf, Kbb, Lb, D, LD, LDinv_c, err, Dff)
 
-    def build_likelihood(self):
+    def maximum_log_likelihood_objective(self):
         """
         Construct a tensorflow function to compute the bound on the marginal
         likelihood. 
@@ -82,9 +79,8 @@ class SGPR_PEP(GPModel):
 
         # a is old inducing points, b is new
         # f is training points
-        (Kbf, Kbb, Lb, D, LD, LDinv_c, err, Dff) = self._build_common_terms()
+        (Kbf, Kbb, Lb, D, LD, LDinv_c, err, Dff) = self._common_terms()
 
-        bound = 0
         # constant term
         bound = -0.5 * N * np.log(2 * np.pi)
         # quadratic term
@@ -92,43 +88,43 @@ class SGPR_PEP(GPModel):
         bound += 0.5 * tf.reduce_sum(tf.square(LDinv_c))
 
         # log det term
-        bound += -0.5 * tf.reduce_sum(tf.log(Dff))
-        bound += - tf.reduce_sum(tf.log(tf.diag_part(LD)))
+        bound += -0.5 * tf.reduce_sum(tf.math.log(Dff))
+        bound += - tf.reduce_sum(tf.math.log(tf.linalg.diag_part(LD)))
 
         # trace-like term
         bound += - 0.5 * (1 - alpha) / alpha * \
-            tf.reduce_sum(tf.log(Dff / sigma2))
+            tf.reduce_sum(tf.math.log(Dff / sigma2))
 
         return bound
 
-    def build_predict(self, Xnew, full_cov=False):
+    def predict_f(self, Xnew, full_cov=False):
         """
         Compute the mean and variance of the latent function at some new points
         Xnew. 
         """
-        # jitter = settings.numerics.jitter_level
-        jitter = 1e-4
+        # jitter = gpflow.default_jitter()
+        jitter = gpflow.utilities.to_default_float(1e-4)
 
         # b is inducing points
         # f is training points
         # s is test points
-        Kbs = self.kern.K(self.Z, Xnew)
-        (Kbf, Kbb, Lb, D, LD, LDinv_c, err, Dff) = self._build_common_terms()
+        Kbs = covariances.Kuf(self.inducing_variable, self.kernel, Xnew)
+        (Kbf, Kbb, Lb, D, LD, LDinv_c, err, Dff) = self._common_terms()
 
-        Lbinv_Kbs = tf.matrix_triangular_solve(Lb, Kbs, lower=True)
-        LDinv_Lbinv_Kbs = tf.matrix_triangular_solve(LD, Lbinv_Kbs, lower=True)
-        mean = tf.matmul(tf.transpose(LDinv_Lbinv_Kbs), LDinv_c)
+        Lbinv_Kbs = tf.linalg.triangular_solve(Lb, Kbs, lower=True)
+        LDinv_Lbinv_Kbs = tf.linalg.triangular_solve(LD, Lbinv_Kbs, lower=True)
+        mean = tf.matmul(LDinv_Lbinv_Kbs, LDinv_c, transpose_a=True)
 
         if full_cov:
-            Kss = self.kern.K(Xnew) + jitter * tf.eye(tf.shape(Xnew)[0], dtype=float_type)
+            Kss = self.kernel(Xnew) # + jitter * tf.eye(tf.shape(Xnew)[0], dtype=gpflow.default_float())  # TODO
             var1 = Kss
-            var2 = - tf.matmul(tf.transpose(Lbinv_Kbs), Lbinv_Kbs)
-            var3 = tf.matmul(tf.transpose(LDinv_Lbinv_Kbs), LDinv_Lbinv_Kbs)
+            var2 = - tf.matmul(Lbinv_Kbs, Lbinv_Kbs, transpose_a=True)
+            var3 = tf.matmul(LDinv_Lbinv_Kbs, LDinv_Lbinv_Kbs, transpose_a=True)
             var = var1 + var2 + var3
         else:
-            var1 = self.kern.Kdiag(Xnew) + jitter
-            var2 = -tf.reduce_sum(tf.square(Lbinv_Kbs), 0)
-            var3 = tf.reduce_sum(tf.square(LDinv_Lbinv_Kbs), 0)
+            var1 = self.kernel(Xnew, full_cov=False) + jitter
+            var2 = -tf.reduce_sum(tf.square(Lbinv_Kbs), axis=0)
+            var3 = tf.reduce_sum(tf.square(LDinv_Lbinv_Kbs), axis=0)
             var = var1 + var2 + var3
 
         return mean + self.mean_function(Xnew), var
