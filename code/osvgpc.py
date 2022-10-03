@@ -6,6 +6,7 @@ from gpflow import conditionals, kullback_leiblers
 from gpflow.inducing_variables import InducingPoints
 from gpflow.models import GPModel, InternalDataTrainingLossMixin
 from gpflow.utilities import positive, triangular
+from packaging import version  # required to handle GPflow breaking changes
 
 
 class OSVGPC(GPModel, InternalDataTrainingLossMixin):
@@ -102,7 +103,11 @@ class OSVGPC(GPModel, InternalDataTrainingLossMixin):
         fmean, fvar = self.predict_f(X, full_cov=False)
 
         # Get variational expectations.
-        var_exp = self.likelihood.variational_expectations(fmean, fvar, Y)
+        if version.parse(gpflow.__version__) < version.Version("2.6.0"):
+            var_exp = self.likelihood.variational_expectations(fmean, fvar, Y)
+        else:
+            # breaking change https://github.com/GPflow/GPflow/pull/1919
+            var_exp = self.likelihood.variational_expectations(X, fmean, fvar, Y)
 
         # re-scale for minibatch size
         if self.num_data is not None:
