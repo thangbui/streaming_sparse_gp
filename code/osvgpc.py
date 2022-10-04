@@ -61,7 +61,6 @@ class OSVGPC(GPModel, InternalDataTrainingLossMixin):
         return kullback_leiblers.prior_kl(self.inducing_variable, self.kernel, self.q_mu, self.q_sqrt, whiten=self.whiten)
 
     def correction_term(self):
-        # TODO
         Mb = self.inducing_variable.num_inducing
         Ma = self.M_old
         # jitter = gpflow.default_jitter()
@@ -70,9 +69,9 @@ class OSVGPC(GPModel, InternalDataTrainingLossMixin):
         ma = self.mu_old
         # a is old inducing points, b is new
         mu, Sigma = self.predict_f(self.Z_old, full_cov=True)
-        Sigma = Sigma[0, :, :]   # TODO is this right!???
+        Sigma = tf.squeeze(Sigma, axis=0)
         Smm = Sigma + tf.matmul(mu, mu, transpose_b=True)
-        Kaa = gpflow.utilities.add_noise_cov(self.Kaa_old, jitter)  # TODO check
+        Kaa = gpflow.utilities.add_noise_cov(self.Kaa_old, jitter)
         LSa = tf.linalg.cholesky(Saa)
         LKa = tf.linalg.cholesky(Kaa)
         obj = tf.reduce_sum(tf.math.log(tf.linalg.diag_part(LKa)))

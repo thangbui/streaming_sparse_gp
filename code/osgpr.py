@@ -168,7 +168,7 @@ class OSGPR_VFE(GPModel, InternalDataTrainingLossMixin):
         mean = tf.matmul(LDinv_Lbinv_Kbs, LDinv_Lbinv_c, transpose_a=True)
 
         if full_cov:
-            Kss = self.kernel(Xnew) # + jitter * tf.eye(tf.shape(Xnew)[0], dtype=gpflow.default_float())  # TODO
+            Kss = self.kernel(Xnew) + jitter * tf.eye(tf.shape(Xnew)[0], dtype=gpflow.default_float())
             var1 = Kss
             var2 = - tf.matmul(Lbinv_Kbs, Lbinv_Kbs, transpose_a=True)
             var3 = tf.matmul(LDinv_Lbinv_Kbs, LDinv_Lbinv_Kbs, transpose_a=True)
@@ -362,7 +362,7 @@ class OSGPR_PEP(GPModel, InternalDataTrainingLossMixin):
         mean = tf.matmul(LDinv_Lbinv_Kbs, LDinv_c, transpose_a=True)
 
         if full_cov:
-            Kss = self.kernel(Xnew) # + jitter * tf.eye(tf.shape(Xnew)[0], dtype=gpflow.default_float())  # TODO
+            Kss = self.kernel(Xnew) + jitter * tf.eye(tf.shape(Xnew)[0], dtype=gpflow.default_float())
             var1 = Kss
             var2 = - tf.matmul(Lbinv_Kbs, Lbinv_Kbs, transpose_a=True)
             var3 = tf.matmul(LDinv_Lbinv_Kbs, LDinv_Lbinv_Kbs, transpose_a=True)

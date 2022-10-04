@@ -171,9 +171,6 @@ def run_vfe(no_batches, M, use_old_Z, iid):
             model = osvgpc.OSVGPC((Xi, yi), gpflow.kernels.RBF(lengthscales=np.ones(2)),
                                   gpflow.likelihoods.Bernoulli(),
                                   mu, Su, Kaa, Zopt, Zinit)
-            # TODO: what does this do: ???
-            # model.kern.variance = model.kern.variance.value
-            # model.kern.lengthscales = model.kern.lengthscales.value
             gpflow.optimizers.Scipy().minimize(
                 model.training_loss, model.trainable_variables,
                 options=dict(disp=1, maxiter=maxiter))
