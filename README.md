@@ -4,7 +4,7 @@ This repository contains an implementation of several online/streaming sparse GP
 
 We also provide an implementation of the collapsed batch Power-EP sparse approximation of Bui, Yan and Turner (2017).
 
-The code was tested using GPflow 0.4.0 and tensorflow 1.2 on a Linux machine and a Mac. Note that latest GPflow breaks backward-compatibility.
+The code was tested using GPflow 2.5 and 2.6 and TensorFlow 2.5.
 
 ## Usage
 
@@ -17,6 +17,7 @@ We provide several test scripts ([regression](code/run_reg_toy.py) and [classifi
 ## Contributors
 
 Thang D. Bui, Cuong V. Nguyen and Richard E. Turner
+[ST John](github.com/st--/)
 
 ## References: 
 

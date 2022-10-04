@@ -3,8 +3,7 @@
 
 import numpy as np
 import matplotlib as mpl
-import scipy.stats
-mpl.use('pgf')
+# mpl.use('pgf')
 
 def figsize(scale, ratio=None):
     fig_width_pt = 397.4849                         # Get this from LaTeX using \the\textwidth
@@ -50,15 +49,10 @@ mpl.rcParams['xtick.color'] = grey
 mpl.rcParams['ytick.color'] = grey
 mpl.rcParams['axes.labelcolor'] = "black"
 
-import scipy as scp
-# import sys
-# sys.path.append('/scratch/tdb40/sandbox/GPflow/gpflow')
-import gpflow as GPflow
+import gpflow
 import osgpr
 import sgpr
-import pdb
 import matplotlib.pyplot as plt
-import tensorflow as tf
 import matplotlib.ticker as ticker
 
 def init_Z(cur_Z, new_X, use_old_Z=True, first_batch=True):
@@ -76,10 +70,10 @@ def init_Z(cur_Z, new_X, use_old_Z=True, first_batch=True):
 
 def plot_model(model, ax, cur_x, cur_y, pred_x, seen_x=None, seen_y=None):
     mx, vx = model.predict_f(pred_x)
-    Zopt = model.Z.value
-    mu, Su = model.predict_f_full_cov(Zopt)
+    Zopt = model.inducing_variable.Z.numpy()
+    mu, Su = model.predict_f(Zopt, full_cov=True)
     if len(Su.shape) == 3:
-        Su = Su[:, :, 0]
+        Su = Su[0, :, :]
         vx = vx[:, 0]
     ax.plot(cur_x, cur_y, 'kx', mew=1, alpha=0.8)
     if seen_x is not None:
@@ -105,7 +99,7 @@ def get_data(shuffle):
     X = X.reshape(X.shape[0], 1)
     y = y.reshape((y.shape[0], 1))
     N = y.shape[0]
-    gap = N/3
+    gap = N//3
     X[:gap, :] = X[:gap, :] - 1
     X[2*gap:3*gap, :] = X[2*gap:3*gap, :] + 1
     if shuffle:
@@ -115,13 +109,19 @@ def get_data(shuffle):
     return X, y
 
 
+def optimize(model, **options):
+    gpflow.optimizers.Scipy().minimize(
+        model.training_loss, model.trainable_variables,
+        options=options)
+
+
 def plot_PEP_optimized(M, alpha, use_old_Z, shuffle):
     fig, axs = plt.subplots(4, 1, figsize=figsize(1, ratio=12.0/19.0), sharey=True, sharex=True)
 
     X, y = get_data(shuffle)
 
     N = X.shape[0]
-    gap = N/3
+    gap = N//3
     # get the first portion and call sparse GP regression
     X1 = X[:gap, :]
     y1 = y[:gap, :]
@@ -130,11 +130,9 @@ def plot_PEP_optimized(M, alpha, use_old_Z, shuffle):
     # Z1 = np.random.rand(M, 1)*L
     Z1 = X1[np.random.permutation(X1.shape[0])[0:M], :]
 
-    model1 = sgpr.SGPR_PEP(X1, y1, GPflow.kernels.RBF(1), Z=Z1, alpha=alpha)
-    model1.likelihood.variance = 0.001
-    model1.kern.variance = 1.0
-    model1.kern.lengthscales = 0.8
-    model1.optimize(disp=1)
+    model1 = sgpr.SGPR_PEP((X1, y1), gpflow.kernels.RBF(variance=1.0, lengthscales=0.8), Z=Z1, alpha=alpha)
+    model1.likelihood.variance.assign(0.001)
+    optimize(model1, disp=1)
 
     # plot prediction
     xx = np.linspace(-2, 12, 100)[:,None]
@@ -146,21 +144,13 @@ def plot_PEP_optimized(M, alpha, use_old_Z, shuffle):
     seen_x = X[:gap, :]
     seen_y = y[:gap, :]
 
-    x_free = tf.placeholder('float64')
-    model1.kern.make_tf_array(x_free)
-    X_tf = tf.placeholder('float64')
-    with model1.kern.tf_mode():
-        Kaa1 = tf.Session().run(
-            model1.kern.K(X_tf), 
-            feed_dict={x_free: model1.kern.get_free_state(), X_tf: model1.Z.value})
+    Kaa1 = model1.kernel(model1.inducing_variable.Z)
 
     Zinit = init_Z(Zopt, X2, use_old_Z)
-    model2 = osgpr.OSGPR_PEP(X2, y2, GPflow.kernels.RBF(1), mu1, Su1, Kaa1, 
+    model2 = osgpr.OSGPR_PEP((X2, y2), gpflow.kernels.RBF(variance=model1.kernel.variance, lengthscales=model1.kernel.lengthscales), mu1, Su1, Kaa1, 
         Zopt, Zinit, alpha)
-    model2.likelihood.variance = model1.likelihood.variance.value
-    model2.kern.variance = model1.kern.variance.value
-    model2.kern.lengthscales = model1.kern.lengthscales.value
-    model2.optimize(disp=1)
+    model2.likelihood.variance.assign(model1.likelihood.variance)
+    optimize(model2, disp=1)
 
     # plot prediction
     mu2, Su2, Zopt = plot_model(model2, axs[1], X2, y2, xx, seen_x, seen_y)
@@ -171,31 +161,22 @@ def plot_PEP_optimized(M, alpha, use_old_Z, shuffle):
     seen_x = np.vstack((seen_x, X2))
     seen_y = np.vstack((seen_y, y2))
 
-    x_free = tf.placeholder('float64')
-    model2.kern.make_tf_array(x_free)
-    X_tf = tf.placeholder('float64')
-    with model2.kern.tf_mode():
-        Kaa2 = tf.Session().run(model2.kern.K(X_tf), 
-            feed_dict={x_free: model2.kern.get_free_state(), X_tf: model2.Z.value})
+    Kaa2 = model2.kernel(model2.inducing_variable.Z)
 
     Zinit = init_Z(Zopt, X3, use_old_Z)
-    model3 = osgpr.OSGPR_PEP(X3, y3, GPflow.kernels.RBF(1), mu2, Su2, Kaa2, 
+    model3 = osgpr.OSGPR_PEP((X3, y3), gpflow.kernels.RBF(variance=model2.kernel.variance, lengthscales=model2.kernel.lengthscales), mu2, Su2, Kaa2, 
         Zopt, Zinit, alpha)
-    model3.likelihood.variance = model2.likelihood.variance.value
-    model3.kern.variance = model2.kern.variance.value
-    model3.kern.lengthscales = model2.kern.lengthscales.value
+    model3.likelihood.variance.assign(model2.likelihood.variance)
+    optimize(model3, disp=1)
 
-    model3.optimize(disp=1)
     mu3, Su3, Zopt = plot_model(model3, axs[2], X3, y3, xx, seen_x, seen_y)
     axs[2].set_xlabel('x')
 
 
     Z4 = X[np.random.permutation(X.shape[0])[0:M], :]
-    model4 = sgpr.SGPR_PEP(X, y, GPflow.kernels.RBF(1), Z=Z4, alpha=alpha)
-    model4.likelihood.variance = 0.001
-    model4.kern.variance = 1.0
-    model4.kern.lengthscales = 0.8
-    model4.optimize(disp=1)
+    model4 = sgpr.SGPR_PEP((X, y), gpflow.kernels.RBF(variance=1.0, lengthscales=0.8), Z=Z4, alpha=alpha)
+    model4.likelihood.variance.assign(0.001)
+    optimize(model4, disp=1)
 
     # plot prediction
     xx = np.linspace(-2, 12, 100)[:,None]
@@ -212,7 +193,7 @@ def plot_VFE_optimized(M, use_old_Z, shuffle):
     X, y = get_data(shuffle)
 
     N = X.shape[0]
-    gap = N/3
+    gap = N//3
 
     # get the first portion and call sparse GP regression
     X1 = X[:gap, :]
@@ -222,11 +203,8 @@ def plot_VFE_optimized(M, use_old_Z, shuffle):
     # Z1 = np.random.rand(M, 1)*L
     Z1 = X1[np.random.permutation(X1.shape[0])[0:M], :]
 
-    model1 = GPflow.sgpr.SGPR(X1, y1, GPflow.kernels.RBF(1), Z=Z1)
-    model1.likelihood.variance = 0.001
-    model1.kern.variance = 1.0
-    model1.kern.lengthscales = 0.8
-    model1.optimize(disp=1)
+    model1 = gpflow.models.SGPR((X1, y1), gpflow.kernels.RBF(variance=1.0, lengthscales=0.8), inducing_variable=Z1, noise_variance=0.001)
+    optimize(model1, disp=1)
 
     # plot prediction
     xx = np.linspace(-2, 12, 100)[:,None]
@@ -238,21 +216,13 @@ def plot_VFE_optimized(M, use_old_Z, shuffle):
     seen_x = X[:gap, :]
     seen_y = y[:gap, :]
 
-    x_free = tf.placeholder('float64')
-    model1.kern.make_tf_array(x_free)
-    X_tf = tf.placeholder('float64')
-    with model1.kern.tf_mode():
-        Kaa1 = tf.Session().run(
-            model1.kern.K(X_tf), 
-            feed_dict={x_free: model1.kern.get_free_state(), X_tf: model1.Z.value})
+    Kaa1 = model1.kernel(model1.inducing_variable.Z)
 
     Zinit = init_Z(Zopt, X2, use_old_Z)
-    model2 = osgpr.OSGPR_VFE(X2, y2, GPflow.kernels.RBF(1), mu1, Su1, Kaa1, 
+    model2 = osgpr.OSGPR_VFE((X2, y2), gpflow.kernels.RBF(variance=model1.kernel.variance, lengthscales=model1.kernel.lengthscales), mu1, Su1, Kaa1, 
         Zopt, Zinit)
-    model2.likelihood.variance = model1.likelihood.variance.value
-    model2.kern.variance = model1.kern.variance.value
-    model2.kern.lengthscales = model1.kern.lengthscales.value
-    model2.optimize(disp=1)
+    model2.likelihood.variance.assign(model1.likelihood.variance)
+    optimize(model2, disp=1)
 
     # plot prediction
     mu2, Su2, Zopt = plot_model(model2, axs[1], X2, y2, xx, seen_x, seen_y)
@@ -263,29 +233,19 @@ def plot_VFE_optimized(M, use_old_Z, shuffle):
     seen_x = np.vstack((seen_x, X2))
     seen_y = np.vstack((seen_y, y2))
 
-    x_free = tf.placeholder('float64')
-    model2.kern.make_tf_array(x_free)
-    X_tf = tf.placeholder('float64')
-    with model2.kern.tf_mode():
-        Kaa2 = tf.Session().run(model2.kern.K(X_tf), 
-            feed_dict={x_free: model2.kern.get_free_state(), X_tf: model2.Z.value})
+    Kaa2 = model2.kernel(model2.inducing_variable.Z)
 
     Zinit = init_Z(Zopt, X3, use_old_Z)
-    model3 = osgpr.OSGPR_VFE(X3, y3, GPflow.kernels.RBF(1), mu2, Su2, Kaa2, 
+    model3 = osgpr.OSGPR_VFE((X3, y3), gpflow.kernels.RBF(variance=model2.kernel.variance, lengthscales=model2.kernel.lengthscales), mu2, Su2, Kaa2, 
         Zopt, Zinit)
-    model3.likelihood.variance = model2.likelihood.variance.value
-    model3.kern.variance = model2.kern.variance.value
-    model3.kern.lengthscales = model2.kern.lengthscales.value
-    model3.optimize(disp=1)
+    model3.likelihood.variance.assign(model2.likelihood.variance)
+    optimize(model3, disp=1)
     mu3, Su3, Zopt = plot_model(model3, axs[2], X3, y3, xx, seen_x, seen_y)
     
 
     Z4 = X[np.random.permutation(X.shape[0])[0:M], :]
-    model4 = GPflow.sgpr.SGPR(X, y, GPflow.kernels.RBF(1), Z=Z4)
-    model4.likelihood.variance = 0.001
-    model4.kern.variance = 1.0
-    model4.kern.lengthscales = 0.8
-    model4.optimize(disp=1)
+    model4 = gpflow.models.SGPR((X, y), gpflow.kernels.RBF(variance=1.0, lengthscales=0.8), inducing_variable=Z4, noise_variance=0.001)
+    optimize(model4, disp=1)
 
     # plot prediction
     xx = np.linspace(-2, 12, 100)[:,None]
