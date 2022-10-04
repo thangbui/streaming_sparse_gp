@@ -19,7 +19,7 @@ We provide several test scripts ([regression](code/run_reg_toy.py) and [classifi
 Thang D. Bui\
 Cuong V. Nguyen\
 Richard E. Turner\
-[ST John](github.com/st--/)
+[ST John](https://github.com/st--/)
 
 ## References: 
 
