@@ -1,6 +1,6 @@
 ## Streaming sparse Gaussian process approximations
 
-This repository contains an implementation of several online/streaming sparse GP approximations for regression and classification (Bui, Nguyen and Turner, NIPS 2017). In particular, [osvgp.py](code/osvgpc.py) implements the uncollapsed variational free-energy for regression and classification, and [osgpr.py](code/osgpr.py) implements the collapsed variational free-energy and Power-EP energy for the regression case.
+This repository contains an implementation of several online/streaming sparse GP approximations for regression and classification ([Bui, Nguyen and Turner, NIPS 2017](https://proceedings.neurips.cc/paper/2017/hash/f31b20466ae89669f9741e047487eb37-Abstract.html)). In particular, [osvgp.py](code/osvgpc.py) implements the uncollapsed variational free-energy for regression and classification, and [osgpr.py](code/osgpr.py) implements the collapsed variational free-energy and Power-EP energy for the regression case.
 
 We also provide an implementation of the collapsed batch Power-EP sparse approximation of Bui, Yan and Turner (2017).
 
@@ -16,9 +16,9 @@ We provide several test scripts ([regression](code/run_reg_toy.py) and [classifi
 
 ## Contributors
 
-Thang D. Bui\
-Cuong V. Nguyen\
-Richard E. Turner\
+[Thang D. Bui](https://thangbui.github.io/)\
+[Cuong V. Nguyen](https://nvcuong.github.io/)\
+[Richard E. Turner](http://learning.eng.cam.ac.uk/Public/Turner/WebHome)\
 [ST John](https://github.com/st--/)
 
 ## References: 
